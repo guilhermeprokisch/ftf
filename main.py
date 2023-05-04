@@ -1,9 +1,12 @@
 import os
 import re
+import shutil
+import string
 import sys
 import termios
 import tty
 from pathlib import Path
+from posixpath import isdir
 
 
 def get_nerdfont_icon(file_name):
@@ -36,9 +39,7 @@ def get_nerdfont_icon(file_name):
     }
 
     extension = file_name[file_name.rfind(".") :]  # Extract the file extension
-    return icon_mapping.get(
-        extension.lower(), "\uF016"
-    )  # Return the corresponding icon or default icon
+    return icon_mapping.get(extension.lower(), "\uF016")
 
 
 def getch():
@@ -53,40 +54,39 @@ def getch():
 
 class Cursor:
     def __init__(self):
-        # self.initial_positon = self.get_inital_positon()
-        self.initial_positon = (0, 0)
+        self.initial_positon = self.get_inital_positon()
         self.x = self.initial_positon[0]
         self.y = self.initial_positon[1]
 
     def move_up(self, lines=1):
         if lines > 0:
-            sys.stdout.write(f"\033[{lines}A")
+            sys.stderr.write(f"\033[{lines}A")
             self.y -= lines
 
     def move_down(self, lines=1):
         if lines > 0:
-            sys.stdout.write(f"\033[{lines}B")
+            sys.stderr.write(f"\033[{lines}B")
             self.y += lines
 
     def move_left(self, columns=1):
         if columns > 0:
-            sys.stdout.write(f"\033[{columns}D")
+            sys.stderr.write(f"\033[{columns}D")
             self.x -= columns
 
     def move_right(self, columns=1):
         if columns > 0:
-            sys.stdout.write(f"\033[{columns}C")
+            sys.stderr.write(f"\033[{columns}C")
             self.x += columns
 
     def move_to(self, x, y):
         if x >= 0 and y >= 0:
-            sys.stdout.write(f"\033[{y+1};{x+1}H")
+            sys.stderr.write(f"\033[{y+1};{x+1}H")
             self.x = x
             self.y = y
 
     def move_to_initial_position(self):
-        current_x, current_y = self.initial_positon
-        self.move_to(current_x, current_y)  # Move the cursor to the current position
+        init_x, init_y = self.initial_positon
+        self.move_to(init_x, init_y)  # Move the cursor to the current position
 
     def get_inital_positon(self):
         OldStdinMode = termios.tcgetattr(sys.stdin)
@@ -95,8 +95,8 @@ class Cursor:
         termios.tcsetattr(sys.stdin, termios.TCSAFLUSH, _)
         try:
             _ = ""
-            sys.stdout.write("\x1b[6n")
-            sys.stdout.flush()
+            sys.stderr.write("\x1b[6n")
+            sys.stderr.flush()
             while not (_ := _ + sys.stdin.read(1)).endswith("R"):
                 pass
             res = re.match(r".*\[(?P<y>\d*);(?P<x>\d*)R", _)
@@ -120,9 +120,16 @@ class FileSelector:
         )
         self.selected_indices = []  # Store the indices of selected files
         self.cursor = Cursor()
+        self.text_input = ""
+        self.marked_to_delete = []
+        self.marked_to_rename = []
+        self.rename = {}
+        self.edit_mode = False
 
     def indicator(self):
-        return "\33[2K\r\u001b[31m>\u001b[0m"
+        if self.edit_mode:
+            return "\33[2K\r\u001b[31m>\u001b[0m"
+        return "\33[2K\r\u001b[34m>\u001b[0m"
 
     def pick_indicator(self):
         return "\u001b[33m*\u001b[0m "
@@ -148,6 +155,8 @@ class FileSelector:
             [f"{self.get_absolute_path(file)}" for file in os.listdir(directory)]
         )
         self.selected_indices = []
+        self.marked_to_delete = []
+        self.renaming_var = ""
 
     def get_relative_path(self, item):
         relative_path = os.path.relpath(os.path.abspath(item), self.root_directory)
@@ -157,37 +166,56 @@ class FileSelector:
         return f"{self.root_directory}/{item}"
 
     def display_files(self):
-        self.clean_display()
         for index, item in enumerate(self.tree):
             is_selected = index == self.current_index
             is_picked = index in self.selected_indices
             indent = self.indent(item, is_selected, is_picked)
+
+            if os.path.isdir(item):
+                item_icon = "\u001b[34m "
+            else:
+                item_icon = get_nerdfont_icon(item)
 
             if item == ".":
                 display_name = os.path.basename(os.path.abspath(self.root_directory))
             else:
                 display_name = os.path.basename(item)
             if os.path.isdir(item):
-                display_name = "\u001b[34m " + display_name
+                display_name = item_icon + display_name
             else:
-                display_name = get_nerdfont_icon(item) + " " + display_name
+                display_name = item_icon + " " + display_name
+
+            if index in self.marked_to_delete:
+                display_name = f"\u001b[9m{display_name}\u001b"
+
+            if self.marked_to_rename and index == self.marked_to_rename[0]:
+                display_name = item_icon + self.text_input
 
             if is_selected and is_picked:
                 print(
-                    f"{self.indicator()}{indent}{self.pick_indicator()}\u001b[7m{display_name}\u001b[0m\u001b[0m"
+                    f"{self.indicator()}{indent}{self.pick_indicator()}\u001b[7m{display_name}\u001b[0m\u001b[0m",
+                    file=sys.stderr,
                 )
             if is_selected and not is_picked:
                 print(
-                    f"{self.indicator()}{indent}\u001b[7m{display_name}\u001b[0m\u001b[0m"
+                    f"{self.indicator()}{indent}\u001b[7m{display_name}\u001b[0m\u001b[0m",
+                    file=sys.stderr,
                 )
             if not is_selected and is_picked:
-                print(f"\33[2K\r{indent}{self.pick_indicator()}{display_name}\u001b[0m")
+                print(
+                    f"\33[2K\r{indent}{self.pick_indicator()}{display_name}\u001b[0m",
+                    file=sys.stderr,
+                )
             if not is_selected and not is_picked:
-                print(f"\33[2K\r{indent}{display_name}\u001b[0m")
+                print(f"\33[2K\r{indent}{display_name}\u001b[0m", file=sys.stderr)
+
+    def display_command(self):
+        # print(":", self.command, file=sys.stderr)
+        pass
 
     def clean_display(self):
         self.cursor.move_to_initial_position()
-        print(self.length * "\33[2K\r\n")
+        print((self.length + 1) * "\33[2K\r\n", file=sys.stderr)
         self.cursor.move_to_initial_position()
 
     def add_itens(self, files):
@@ -207,6 +235,15 @@ class FileSelector:
         if self.current_index > 0:
             self.current_index -= 1
         self.cursor.move_up()
+
+    def mark_item_to_delete(self):
+        if self.current_index in self.marked_to_delete:
+            self.marked_to_delete.remove(self.current_index)
+            return
+        self.marked_to_delete.append(self.current_index)
+
+    def mark_item_to_rename(self):
+        self.marked_to_rename.append(self.current_index)
 
     @property
     def current_item(self):
@@ -236,9 +273,19 @@ class FileSelector:
     def return_dir(self):
         self.set_root(Path(self.root_directory).parent.absolute())
 
+    def delete_itens(self):
+        for index in self.marked_to_delete:
+            item = self.tree[index]
+            if os.path.isdir(item):
+                shutil.rmtree(item, ignore_errors=True)
+                print("removed", self.get_relative_path(item), file=sys.stderr)
+            else:
+                os.remove(item)
+                print("removed", self.get_relative_path(item), file=sys.stderr)
+
     def set_root(self, path):
-        self.clean_display()
         if os.path.isdir(path):
+            self.clean_display()
             self.root_directory = Path(path).absolute()
             self.length = 0
             self.tree = ["."]
@@ -251,43 +298,79 @@ class FileSelector:
             self.selected_indices = []
             self.current_index = 1
 
+    def toggle_edit_mode(self):
+        self.edit_mode = not self.edit_mode
+        return self.edit_mode
+
     def run(self):
-        self.current_index = 1  # Initialize the selected index
+        self.current_index = -1  # Initialize the selected index
+        selected_files = []
+        if len(self.tree) == 1:
+            print("", file=sys.stderr)
+            return
         while True:
+            self.clean_display()
             self.display_files()
+            if selected_files == [self.root_directory]:
+                return selected_files
             char = getch()
-            # print("\33[2K\r", char)
+            # print(char, file=sys.stderr)
+            # return
+            self.display_command()
             if char == 106:
+                if self.current_index == -1:
+                    self.move_cursor_down()
                 self.move_cursor_down()
             elif char == 107:
                 self.move_cursor_up()
-            elif char == 108:
+            elif char == 108 and not self.edit_mode:
                 self.add_selected_contents()
-            elif char == 76:
+            elif char == 76 and not self.edit_mode:
                 self.set_root(self.tree[self.current_index])
             elif char == 104:
                 self.remove_selected_folder_contents()
+            elif char == 100 and not self.edit_mode:
+                self.mark_item_to_delete()
+            elif char == 114:
+                if self.toggle_edit_mode():
+                    self.mark_item_to_rename()
+                else:
+                    self.marked_to_rename = self.marked_to_rename[:-1]
             elif char == 72:
                 self.return_dir()
-            elif char == 32:  # Spacebar
+            elif char == 32 and not self.edit_mode:  # Spacebar
                 self.toggle_file_selection()
             elif char in [27, 113]:
-                return
+                selected_files = [self.root_directory]
+                self.delete_itens()
+                self.current_index = -1
             elif char in {10, 13}:  # Enter key
                 break
+            else:
+                if chr(char) in string.printable:
+                    self.text_input += chr(char)
+                elif char == 127:
+                    self.text_input = self.text_input[:-1]
+                else:
+                    self.rename[self.tree[self.marked_to_rename[0]]] = self.text_input
+                    pass
 
         selected_files = [self.tree[index] for index in self.selected_indices]
         if not selected_files:
             selected_files = [self.current_item]
+
+        print(self.rename, file=sys.stderr)
+        # return self.rename
+        self.delete_itens()
+        self.clean_display()
         return selected_files
 
 
 if __name__ == "__main__":
+    print("\033[?25l", end="", file=sys.stderr)
     selector = FileSelector(directory=".")
-
-    # selected_files = ["Hello"]
     selected_files = selector.run()
-
-    # Print the selected file(s)
-    for file in selected_files:
-        print(file)
+    print("\033[?25h", end="", file=sys.stderr)
+    if selected_files:
+        for file in selected_files:
+            print(file, end="")
