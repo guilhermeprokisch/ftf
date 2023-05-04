@@ -327,11 +327,11 @@ class FileSelector:
             # print(char, file=sys.stderr)
             # return
             self.display_command()
-            if char == 106 and not self.edit_mode:
+            if char == 106:
                 if self.current_index == -1:
                     self.move_cursor_down()
                 self.move_cursor_down()
-            elif char == 107 and not self.edit_mode:
+            elif char == 107:
                 self.move_cursor_up()
             elif char == 108 and not self.edit_mode:
                 self.add_selected_contents()
