@@ -2,43 +2,76 @@ import os
 import re
 import shutil
 import string
+import subprocess
 import sys
 import termios
 import tty
 from pathlib import Path
 
 
-def get_nerdfont_icon(file_name):
-    icon_mapping = {
-        ".txt": "\uF15C",  # File icon
-        ".jpg": "\uF1C5",  # Image icon
-        ".png": "\uF1C5",  # Image icon
-        ".doc": "\uF1C2",  # Word icon
-        ".docx": "\uF1C2",  # Word icon
-        ".pdf": "\uF1C1",  # PDF icon
-        ".xls": "\uF1C3",  # Excel icon
-        ".xlsx": "\uF1C3",  # Excel icon
-        ".ppt": "\uF1C4",  # PowerPoint icon
-        ".pptx": "\uF1C4",  # PowerPoint icon
-        ".mp3": "\uF001",  # Music icon
-        ".mp4": "\uF008",  # Video icon
-        ".zip": "\uF1C6",  # Archive icon
-        ".rar": "\uF1C6",  # Archive icon
-        ".tar": "\uF1C6",  # Archive icon
-        ".gz": "\uF1C6",  # Archive icon
-        ".7z": "\uF1C6",  # Archive icon
-        ".exe": "\uF013",  # Executable icon
-        ".py": "\uF2C8",  # Python icon
-        ".java": "\uF17E",  # Java icon
-        ".html": "\uF13B",  # HTML icon
-        ".css": "\uF13C",  # CSS icon
-        ".js": "\uF3B8",  # JavaScript icon
-        ".json": "\uF3C9",  # JSON icon
-        # Add more mappings as needed
-    }
+def memoize(func):
+    cache = {}
 
-    extension = file_name[file_name.rfind(".") :]  # Extract the file extension
-    return icon_mapping.get(extension.lower(), "\uF016") + " "
+    def wrapper(*args):
+        if args in cache:
+            return cache[args]
+        else:
+            result = func(*args)
+            cache[args] = result
+            return result
+
+    return wrapper
+
+
+@memoize
+def get_exa_icon(filepath):
+    output = subprocess.check_output(["lsd", "--icon", "always", filepath]).decode(
+        "utf-8"
+    )
+    icon = output.split()[0]
+    return icon
+
+
+def get_nerdfont_icon(file_name):
+    if file_name:
+        if os.path.isdir(file_name) or file_name[-1] == "/":
+            return "\u001b[34m "
+        return get_exa_icon(file_name) + " "
+    return " "
+    # icon_mapping = {
+    #     ".txt": "\uF15C",  # File icon
+    #     ".jpg": "\uF1C5",  # Image icon
+    #     ".png": "\uF1C5",  # Image icon
+    #     ".doc": "\uF1C2",  # Word icon
+    #     ".docx": "\uF1C2",  # Word icon
+    #     ".pdf": "\uF1C1",  # PDF icon
+    #     ".xls": "\uF1C3",  # Excel icon
+    #     ".xlsx": "\uF1C3",  # Excel icon
+    #     ".ppt": "\uF1C4",  # PowerPoint icon
+    #     ".pptx": "\uF1C4",  # PowerPoint icon
+    #     ".mp3": "\uF001",  # Music icon
+    #     ".mp4": "\uF008",  # Video icon
+    #     ".zip": "\uF1C6",  # Archive icon
+    #     ".rar": "\uF1C6",  # Archive icon
+    #     ".tar": "\uF1C6",  # Archive icon
+    #     ".gz": "\uF1C6",  # Archive icon
+    #     ".7z": "\uF1C6",  # Archive icon
+    #     ".exe": "\uF013",  # Executable icon
+    #     ".py": "\uF2C8",  # Python icon
+    #     ".java": "\uF17E",  # Java icon
+    #     ".html": "\uF13B",  # HTML icon
+    #     ".css": "\uF13C",  # CSS icon
+    #     ".js": "\uF3B8",  # JavaScript icon
+    #     ".json": "\uF3C9",  # JSON icon
+    #     # Add more mappings as needed
+    # }
+    #
+    # if file_name:
+    #     if os.path.isdir(file_name) or file_name[-1] == "/":
+    #         return "\u001b[34m "
+    #
+    # extension = file_name[file_name.rfind(".") :]  # Extract the file extension
+    # return icon_mapping.get(extension.lower(), "\uF016") + " "
 
 
 def getch():
@@ -181,10 +214,7 @@ class FileSelector:
             self.is_picked = index in self.selected_indices
             indent = self.indent(item, self.is_selected, self.is_picked)
 
-            if os.path.isdir(item):
-                item_icon = "\u001b[34m "
-            else:
-                item_icon = get_nerdfont_icon(item)
+            item_icon = get_nerdfont_icon(item)
 
             if item == ".":
                 basename = os.path.basename(os.path.abspath(self.root_directory))
@@ -208,7 +238,7 @@ class FileSelector:
                     file=sys.stderr,
                 )
                 print(
-                    f"{self.arrow_indicator()}{indent} {self.highlight_indicator(new_file_display_string)}",
+                    f"{self.arrow_indicator()}{indent}{self.highlight_indicator(new_file_display_string)}",
                     file=sys.stderr,
                 )
                 continue
