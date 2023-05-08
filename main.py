@@ -33,45 +33,45 @@ def get_exa_icon(filepath):
 
 
 def get_nerdfont_icon(file_name):
-    if file_name:
-        if os.path.isdir(file_name) or file_name[-1] == "/":
-            return "\u001b[34m "
-        return get_exa_icon(file_name) + " "
-    return " "
-    # icon_mapping = {
-    #     ".txt": "\uF15C",  # File icon
-    #     ".jpg": "\uF1C5",  # Image icon
-    #     ".png": "\uF1C5",  # Image icon
-    #     ".doc": "\uF1C2",  # Word icon
-    #     ".docx": "\uF1C2",  # Word icon
-    #     ".pdf": "\uF1C1",  # PDF icon
-    #     ".xls": "\uF1C3",  # Excel icon
-    #     ".xlsx": "\uF1C3",  # Excel icon
-    #     ".ppt": "\uF1C4",  # PowerPoint icon
-    #     ".pptx": "\uF1C4",  # PowerPoint icon
-    #     ".mp3": "\uF001",  # Music icon
-    #     ".mp4": "\uF008",  # Video icon
-    #     ".zip": "\uF1C6",  # Archive icon
-    #     ".rar": "\uF1C6",  # Archive icon
-    #     ".tar": "\uF1C6",  # Archive icon
-    #     ".gz": "\uF1C6",  # Archive icon
-    #     ".7z": "\uF1C6",  # Archive icon
-    #     ".exe": "\uF013",  # Executable icon
-    #     ".py": "\uF2C8",  # Python icon
-    #     ".java": "\uF17E",  # Java icon
-    #     ".html": "\uF13B",  # HTML icon
-    #     ".css": "\uF13C",  # CSS icon
-    #     ".js": "\uF3B8",  # JavaScript icon
-    #     ".json": "\uF3C9",  # JSON icon
-    #     # Add more mappings as needed
-    # }
-    #
     # if file_name:
     #     if os.path.isdir(file_name) or file_name[-1] == "/":
     #         return "\u001b[34m "
-    #
-    # extension = file_name[file_name.rfind(".") :]  # Extract the file extension
-    # return icon_mapping.get(extension.lower(), "\uF016") + " "
+    #     return get_exa_icon(file_name) + " "
+    # return " "
+    icon_mapping = {
+        ".txt": "\uF15C",  # File icon
+        ".jpg": "\uF1C5",  # Image icon
+        ".png": "\uF1C5",  # Image icon
+        ".doc": "\uF1C2",  # Word icon
+        ".docx": "\uF1C2",  # Word icon
+        ".pdf": "\uF1C1",  # PDF icon
+        ".xls": "\uF1C3",  # Excel icon
+        ".xlsx": "\uF1C3",  # Excel icon
+        ".ppt": "\uF1C4",  # PowerPoint icon
+        ".pptx": "\uF1C4",  # PowerPoint icon
+        ".mp3": "\uF001",  # Music icon
+        ".mp4": "\uF008",  # Video icon
+        ".zip": "\uF1C6",  # Archive icon
+        ".rar": "\uF1C6",  # Archive icon
+        ".tar": "\uF1C6",  # Archive icon
+        ".gz": "\uF1C6",  # Archive icon
+        ".7z": "\uF1C6",  # Archive icon
+        ".exe": "\uF013",  # Executable icon
+        ".py": "\uF2C8",  # Python icon
+        ".java": "\uF17E",  # Java icon
+        ".html": "\uF13B",  # HTML icon
+        ".css": "\uF13C",  # CSS icon
+        ".js": "\uF3B8",  # JavaScript icon
+        ".json": "\uF3C9",  # JSON icon
+        # Add more mappings as needed
+    }
+
+    if file_name:
+        if os.path.isdir(file_name) or file_name[-1] == "/":
+            return "\u001b[34m "
+
+    extension = file_name[file_name.rfind(".") :]  # Extract the file extension
+    return icon_mapping.get(extension.lower(), "\uF016") + " "
 
 
 def getch():
@@ -154,6 +154,9 @@ class FileSelector:
         self.cursor = Cursor()
         self.text_input = ""
         self.marked_to_delete = []
+        self.marked_to_copy = []
+        self.marked_to_cut = []
+        self.marked_as_new = []
         self.rename = {}
         self.edit_mode = False
         self.rename_mode = False
@@ -163,7 +166,7 @@ class FileSelector:
     def arrow_indicator(self):
         if self.is_selected:
             if self.edit_mode:
-                return "\33[2K\r\u001b[31m>\u001b[0m"
+                return "\33[2K\r\u001b[33m>\u001b[0m"
             return "\33[2K\r\u001b[34m>\u001b[0m"
         return ""
 
@@ -198,8 +201,6 @@ class FileSelector:
             [f"{self.get_absolute_path(file)}" for file in os.listdir(directory)]
         )
         self.selected_indices = []
-        self.marked_to_delete = []
-        self.renaming_var = ""
 
     def get_relative_path(self, item):
         relative_path = os.path.relpath(os.path.abspath(item), self.root_directory)
@@ -208,10 +209,30 @@ class FileSelector:
     def get_absolute_path(self, item):
         return f"{self.root_directory}/{item}"
 
+    def action_indicator(self):
+        if self.is_marked_to_copy:
+            return "\033[1;32m  copy \033[0m"
+        if self.is_marked_to_cut:
+            return "\033[1;35m 󰆐 cut \033[0m"
+        if self.is_marked_to_delete:
+            return "\033[1;31m  delete\u001b[0m "
+        if self.is_new or self.is_adding:
+            return "\033[1;33m  new \u001b[0m "
+        if self.is_renaming:
+            return "\033[1;33m 󰙏 renaming \u001b[0m "
+        return ""
+
     def display_files(self):
         for index, item in enumerate(self.tree):
             self.is_selected = index == self.current_index
             self.is_picked = index in self.selected_indices
+            self.is_marked_to_copy = item in self.marked_to_copy
+            self.is_marked_to_cut = item in self.marked_to_cut
+            self.is_marked_to_delete = item in self.marked_to_delete
+            self.is_new = item in self.marked_as_new
+            self.is_renaming = self.rename_mode and self.is_selected
+            self.is_adding = self.add_mode and self.is_selected
+
             indent = self.indent(item, self.is_selected, self.is_picked)
 
             item_icon = get_nerdfont_icon(item)
@@ -223,13 +244,13 @@ class FileSelector:
 
             display_string = item_icon + basename
 
-            if index in self.marked_to_delete:
+            if self.is_marked_to_delete:
                 display_string = f"\u001b[9m{display_string}\u001b"
 
-            if self.rename_mode and self.is_selected:
-                display_string = item_icon + self.text_input
+            if self.is_renaming:
+                display_string = get_nerdfont_icon(self.text_input) + self.text_input
 
-            if self.add_mode and self.is_selected:
+            if self.is_adding:
                 new_file_display_string = (
                     get_nerdfont_icon(self.text_input) + self.text_input
                 )
@@ -238,13 +259,13 @@ class FileSelector:
                     file=sys.stderr,
                 )
                 print(
-                    f"{self.arrow_indicator()}{indent}{self.highlight_indicator(new_file_display_string)}",
+                    f"{self.arrow_indicator()}{indent}{self.highlight_indicator(new_file_display_string)}{self.action_indicator()}",
                     file=sys.stderr,
                 )
                 continue
 
             print(
-                f"{self.arrow_indicator()}{indent}{self.pick_indicator()}{self.highlight_indicator(display_string)}",
+                f"{self.arrow_indicator()}{indent}{self.pick_indicator()}{self.highlight_indicator(display_string)}{self.action_indicator()}",
                 file=sys.stderr,
             )
 
@@ -277,10 +298,22 @@ class FileSelector:
         self.cursor.move_up()
 
     def mark_item_to_delete(self):
-        if self.current_index in self.marked_to_delete:
-            self.marked_to_delete.remove(self.current_index)
+        if self.current_item in self.marked_to_delete:
+            self.marked_to_delete.remove(self.current_item)
             return
-        self.marked_to_delete.append(self.current_index)
+        self.marked_to_delete.append(self.current_item)
+
+    def mark_item_to_copy(self):
+        if self.current_item in self.marked_to_copy:
+            self.marked_to_copy.remove(self.current_item)
+            return
+        self.marked_to_copy.append(self.current_item)
+
+    def mark_item_to_cut(self):
+        if self.current_item in self.marked_to_cut:
+            self.marked_to_cut.remove(self.current_item)
+            return
+        self.marked_to_cut.append(self.current_item)
 
     @property
     def current_item(self):
@@ -311,14 +344,11 @@ class FileSelector:
         self.set_root(Path(self.root_directory).parent.absolute())
 
     def delete_itens(self):
-        for index in self.marked_to_delete:
-            item = self.tree[index]
+        for item in self.marked_to_delete:
             if os.path.isdir(item):
                 shutil.rmtree(item, ignore_errors=True)
-                # print("removed", self.get_relative_path(item), file=sys.stderr)
             else:
                 os.remove(item)
-                # print("removed", self.get_relative_path(item), file=sys.stderr)
 
     def set_root(self, path):
         if os.path.isdir(path):
@@ -369,7 +399,38 @@ class FileSelector:
             else:
                 Path(new_path).touch()
             self.tree.insert(self.current_index + 1, new_path)
+            self.marked_as_new.append(new_path)
         self.current_index += 1
+
+    def paste_items(self):
+        for src in self.marked_to_copy:
+            if os.path.isdir(self.current_item):
+                dst = self.current_item + "/" + os.path.basename(os.path.abspath(src))
+            else:
+                dst = (
+                    os.path.dirname(self.current_item)
+                    + "/"
+                    + os.path.basename(os.path.abspath(src))
+                )
+            shutil.copy(src, dst)
+            self.tree.insert(self.current_index + 1, dst)
+            self.current_index += 1
+            self.marked_as_new.append(dst)
+        for src in self.marked_to_cut:
+            if os.path.isdir(self.current_item):
+                dst = self.current_item + "/" + os.path.basename(os.path.abspath(src))
+            else:
+                dst = (
+                    os.path.dirname(self.current_item)
+                    + "/"
+                    + os.path.basename(os.path.abspath(src))
+                )
+            shutil.move(src, dst)
+            self.tree.remove(src)
+            self.tree.insert(self.current_index + 1, dst)
+            self.current_index += 1
+            self.marked_as_new.append(dst)
+        self.marked_to_copy = []
 
     def pre_exit(self):
         if self.mark_item_to_delete:
@@ -406,7 +467,14 @@ class FileSelector:
                     self.remove_selected_folder_contents()
                 elif char == 100:
                     self.mark_item_to_delete()
+                elif char == 121:
+                    self.mark_item_to_copy()
+                elif char == 120:
+                    self.mark_item_to_cut()
+                elif char == 112:
+                    self.paste_items()
                 elif char == 114:
+                    self.text_input = os.path.basename(self.current_item)
                     self.rename_mode = True
                     self.edit_mode = True
                     continue
